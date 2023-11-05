@@ -4,17 +4,29 @@ import { RTMUtils } from "./utils";
 let Socket: WebSocket;
 let InvokeQueue: Map<string, RTMMessage<any>> = new Map();
 let authenticated = false;
+let address: string;
+let options: RTMClientOptions;
+
+let reconnectAttempt = 0;
+
+export interface RTMClientOptions {
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: () => void;
+  onReconnect?: (attempt: number) => void;
+
+  /**
+   * Interval in milliseconds to wait after each reconnect attempt. Set to 0 to disable auto reconnect.
+   */
+  reconnectDelayMs?: number;
+}
 
 export interface RTMClient {
-  Socket: WebSocket;
+  getSocket: () => WebSocket;
   closeClient: () => void | Promise<any>;
   authenticate: <T>(token: string) => Promise<T>;
   isAuthenticated: () => boolean;
-  options?: {
-    onOpen?: () => void;
-    onClose?: () => void;
-    onError?: () => void;
-  };
+  options?: {};
   callWait: <T>(func: string, ...params: any[]) => Promise<T>;
   call: (func: string, ...params: any[]) => Promise<void>;
 }
@@ -25,19 +37,16 @@ export interface RTMClient {
  * @param options
  */
 export function createClient(
-  address: string,
-  options?: {
-    onOpen?: () => void;
-    onClose?: () => void;
-    onError?: () => void;
-  }
+  rtmAddress: string,
+  rtmOptions?: RTMClientOptions
 ): RTMClient {
-  Socket = new WebSocket(address);
+  Socket = new WebSocket(rtmAddress);
   Socket.addEventListener("open", () => {
     options?.onOpen?.();
   });
   Socket.addEventListener("close", () => {
     options?.onClose?.();
+    if (options?.reconnectDelayMs && options.reconnectDelayMs > 0) reconnect();
   });
   Socket.addEventListener("error", (ev) => {
     options?.onError?.();
@@ -46,17 +55,44 @@ export function createClient(
     let _msg = new RTMMessageResponse(msg.data.toString());
     onMessageResponse(_msg);
   });
+  if (rtmOptions) options = rtmOptions;
+  address = rtmAddress;
   return {
-    Socket: Socket,
+    getSocket() {
+      return Socket;
+    },
     closeClient: closeClient,
     authenticate: authenticate,
-    options: options,
+    options: rtmOptions,
     call: Call,
     callWait: CallWait,
     isAuthenticated() {
       return authenticated;
     },
   };
+}
+
+async function reconnect() {
+  // wait for the delay
+  await new Promise((resolve) => setTimeout(resolve, options.reconnectDelayMs));
+  reconnectAttempt += 1;
+  options.onReconnect?.(reconnectAttempt);
+  Socket = new WebSocket(address);
+  Socket.addEventListener("open", () => {
+    options?.onOpen?.();
+    reconnectAttempt = 0;
+  });
+  Socket.addEventListener("close", () => {
+    options?.onClose?.();
+    if (options?.reconnectDelayMs && options.reconnectDelayMs > 0) reconnect();
+  });
+  Socket.addEventListener("error", (ev) => {
+    options?.onError?.();
+  });
+  Socket.addEventListener("message", (msg) => {
+    let _msg = new RTMMessageResponse(msg.data.toString());
+    onMessageResponse(_msg);
+  });
 }
 
 /**
