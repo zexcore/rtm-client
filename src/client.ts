@@ -77,7 +77,8 @@ function onMessageResponse(msg: RTMMessageResponse<any>) {
  * Performs an authentication using a token. Returns a promise that is resolved when authentication succeeds.
  */
 async function authenticate<T>(token: string) {
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<T>(async (resolve, reject) => {
+    await waitForReadyState();
     // Construct a new message
     let msg: RTMMessage<T> = {
       id: RTMUtils.uuidv4(),
@@ -97,6 +98,7 @@ async function authenticate<T>(token: string) {
  * the results back.
  */
 async function Call<T>(func: string, ...data: any[]) {
+  await waitForReadyState();
   // Construct a new message
   let msg: RTMMessage<T> = {
     id: RTMUtils.uuidv4(),
@@ -116,7 +118,8 @@ async function Call<T>(func: string, ...data: any[]) {
  * @returns Promise that is resolved when the response is received from the server.
  */
 async function CallWait<T>(func: string, ...data: any[]) {
-  return new Promise<T>((resolve, reject) => {
+  return new Promise<T>(async (resolve, reject) => {
+    await waitForReadyState();
     // Construct a new message
     let msg: RTMMessage<T> = {
       id: RTMUtils.uuidv4(),
@@ -134,4 +137,17 @@ async function CallWait<T>(func: string, ...data: any[]) {
 
 async function closeClient() {
   Socket.close();
+}
+
+async function waitForReadyState() {
+  return new Promise((resolve) => {
+    function _wait() {
+      if (Socket.readyState === Socket.OPEN) {
+        resolve(true);
+      } else {
+        setTimeout(_wait, 100);
+      }
+    }
+    setTimeout(_wait, 100);
+  });
 }
