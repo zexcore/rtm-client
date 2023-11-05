@@ -76,14 +76,14 @@ function onMessageResponse(msg: RTMMessageResponse<any>) {
 /**
  * Performs an authentication using a token. Returns a promise that is resolved when authentication succeeds.
  */
-async function authenticate<T>(token: string) {
+async function authenticate<T>(...params: any[]) {
   return new Promise<T>(async (resolve, reject) => {
     await waitForReadyState();
     // Construct a new message
     let msg: RTMMessage<T> = {
       id: RTMUtils.uuidv4(),
       type: "auth",
-      data: token,
+      data: params,
       response: resolve,
     };
     // add the message to the message queue
