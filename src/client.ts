@@ -3,11 +3,13 @@ import { RTMMessageResponse } from "./RTMMessageResponse";
 import { RTMUtils } from "./utils";
 let Socket: WebSocket;
 let InvokeQueue: Map<string, RTMMessage<any>> = new Map();
+let authenticated = false;
 
 export interface RTMClient {
   Socket: WebSocket;
   closeClient: () => void | Promise<any>;
   authenticate: <T>(token: string) => Promise<T>;
+  isAuthenticated: () => boolean;
   options?: {
     onOpen?: () => void;
     onClose?: () => void;
@@ -51,6 +53,9 @@ export function createClient(
     options: options,
     call: Call,
     callWait: CallWait,
+    isAuthenticated() {
+      return authenticated;
+    },
   };
 }
 
@@ -61,6 +66,10 @@ export function createClient(
 function onMessageResponse(msg: RTMMessageResponse<any>) {
   // Get the message promise from queue
   const msgInfo = InvokeQueue.get(msg.id);
+  if (msgInfo?.type === "auth") {
+    // If the data is truthy, we set authenticated to true.
+    authenticated = Boolean(msg.data);
+  }
   msgInfo?.response?.(msg.data);
 }
 
