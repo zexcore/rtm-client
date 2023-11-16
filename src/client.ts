@@ -106,7 +106,12 @@ function onMessageResponse(msg: RTMMessageResponse<any>) {
     // If the data is truthy, we set authenticated to true.
     authenticated = Boolean(msg.data);
   }
-  msgInfo?.response?.(msg.data);
+  // If the message is error, we call on reject with its data.
+  if (msg.data.error) {
+    msgInfo?.reject?.(msg.data.error);
+  } else {
+    msgInfo?.response?.(msg.data);
+  }
 }
 
 /**
@@ -121,6 +126,7 @@ async function authenticate<T>(...params: any[]) {
       type: "auth",
       data: params,
       response: resolve,
+      reject: reject,
     };
     // add the message to the message queue
     InvokeQueue.set(msg.id, msg);
@@ -163,6 +169,7 @@ async function CallWait<T>(func: string, ...data: any[]) {
       data: data,
       response: resolve,
       function: func,
+      reject: reject,
     };
     // add the message to the message queue
     InvokeQueue.set(msg.id, msg);
