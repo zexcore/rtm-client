@@ -161,7 +161,6 @@ async function Call<T>(func: string, ...data: any[]) {
  */
 async function CallWait<T>(func: string, ...data: any[]) {
   return new Promise<T>(async (resolve, reject) => {
-    await waitForReadyState();
     // Construct a new message
     let msg: RTMMessage<T> = {
       id: RTMUtils.uuidv4(),
