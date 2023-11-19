@@ -3,6 +3,7 @@ import { RTMMessageResponse } from "./RTMMessageResponse";
 import { RTMUtils } from "./utils";
 let Socket: WebSocket;
 let InvokeQueue: Map<string, RTMMessage<any>> = new Map();
+let MessageQueue: RTMMessage<any>[] = [];
 let authenticated = false;
 let address: string;
 let options: RTMClientOptions;
@@ -19,6 +20,11 @@ export interface RTMClientOptions {
    * Interval in milliseconds to wait after each reconnect attempt. Set to 0 to disable auto reconnect.
    */
   reconnectDelayMs?: number;
+
+  /**
+   * If enabled, messages sent via the call functions are queued until the connection has Ready state.
+   */
+  enableMessageQueue?: boolean;
 }
 
 export interface RTMClient {
@@ -43,6 +49,13 @@ export function createClient(
   Socket = new WebSocket(rtmAddress);
   Socket.addEventListener("open", () => {
     options?.onOpen?.();
+    // Process any queued msgs
+    if (MessageQueue.length > 0) {
+      for (let m of MessageQueue) {
+        Socket.send(JSON.stringify(m));
+      }
+    }
+    MessageQueue = [];
   });
   Socket.addEventListener("close", () => {
     options?.onClose?.();
@@ -160,20 +173,29 @@ async function Call<T>(func: string, ...data: any[]) {
  * @returns Promise that is resolved when the response is received from the server.
  */
 async function CallWait<T>(func: string, ...data: any[]) {
-  return new Promise<T>(async (resolve, reject) => {
-    // Construct a new message
-    let msg: RTMMessage<T> = {
-      id: RTMUtils.uuidv4(),
-      type: "invoke",
-      data: data,
-      response: resolve,
-      function: func,
-      reject: reject,
-    };
-    // add the message to the message queue
-    InvokeQueue.set(msg.id, msg);
-    // Send the message
-    Socket.send(JSON.stringify(msg));
+  return new Promise<T>((resolve, reject) => {
+    try {
+      // Construct a new message
+      let msg: RTMMessage<T> = {
+        id: RTMUtils.uuidv4(),
+        type: "invoke",
+        data: data,
+        response: resolve,
+        function: func,
+        reject: reject,
+      };
+      // add the message to the message queue
+      InvokeQueue.set(msg.id, msg);
+      // If we are not in ready State, and if message queue is enabled, we add this msg to the que
+      if (Socket.readyState !== Socket.OPEN && options.enableMessageQueue) {
+        MessageQueue.push(msg);
+      } else {
+        // Send the message
+        Socket.send(JSON.stringify(msg));
+      }
+    } catch (err: any) {
+      reject(err);
+    }
   });
 }
 
