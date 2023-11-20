@@ -11,3 +11,13 @@ export class RTMMessageResponse<T> {
     this.id = _msg.id;
   }
 }
+
+export class RTMSubscriptionMessage<T> {
+  data: T;
+  event: string;
+
+  constructor(raw: any) {
+    this.data = raw.data;
+    this.event = raw.event;
+  }
+}

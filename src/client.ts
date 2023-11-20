@@ -1,5 +1,10 @@
+import { RTMClient } from "./RTMClient";
+import { RTMClientOptions } from "./RTMClientOptions";
 import { RTMMessage } from "./RTMMessage";
-import { RTMMessageResponse } from "./RTMMessageResponse";
+import {
+  RTMMessageResponse,
+  RTMSubscriptionMessage,
+} from "./RTMMessageResponse";
 import { RTMUtils } from "./utils";
 let Socket: WebSocket;
 let InvokeQueue: Map<string, RTMMessage<any>> = new Map();
@@ -7,35 +12,13 @@ let MessageQueue: RTMMessage<any>[] = [];
 let authenticated = false;
 let address: string;
 let options: RTMClientOptions;
+// Main key is eventName, secondary key is a unique ID of each subscriber used to unsubscribe.
+let Subscriptions: Map<
+  string,
+  Map<string, (...data: any[]) => Promise<void> | void>
+> = new Map();
 
 let reconnectAttempt = 0;
-
-export interface RTMClientOptions {
-  onOpen?: () => void;
-  onClose?: () => void;
-  onError?: () => void;
-  onReconnect?: (attempt: number) => void;
-
-  /**
-   * Interval in milliseconds to wait after each reconnect attempt. Set to 0 to disable auto reconnect.
-   */
-  reconnectDelayMs?: number;
-
-  /**
-   * If enabled, messages sent via the call functions are queued until the connection has Ready state.
-   */
-  enableMessageQueue?: boolean;
-}
-
-export interface RTMClient {
-  getSocket: () => WebSocket;
-  closeClient: () => void | Promise<any>;
-  authenticate: <T>(token: string) => Promise<T>;
-  isAuthenticated: () => boolean;
-  options?: {};
-  callWait: <T>(func: string, ...params: any[]) => Promise<T>;
-  call: (func: string, ...params: any[]) => Promise<void>;
-}
 
 /**
  * Creates a new RTM Client
@@ -58,6 +41,7 @@ export function createClient(
     MessageQueue = [];
   });
   Socket.addEventListener("close", () => {
+    authenticated = false;
     options?.onClose?.();
     if (options?.reconnectDelayMs && options.reconnectDelayMs > 0) reconnect();
   });
@@ -65,8 +49,15 @@ export function createClient(
     options?.onError?.();
   });
   Socket.addEventListener("message", (msg) => {
-    let _msg = new RTMMessageResponse(msg.data.toString());
-    onMessageResponse(_msg);
+    const _raw = JSON.parse(msg.data.toString());
+    if (_raw.event) {
+      // This is an event.
+      let _smsg = new RTMSubscriptionMessage(_raw);
+      onSubscriptionMessage(_smsg);
+    } else {
+      let _msg = new RTMMessageResponse(msg.data.toString());
+      onMessageResponse(_msg);
+    }
   });
   if (rtmOptions) options = rtmOptions;
   address = rtmAddress;
@@ -82,6 +73,7 @@ export function createClient(
     isAuthenticated() {
       return authenticated;
     },
+    subscribe: Subscribe,
   };
 }
 
@@ -96,6 +88,7 @@ async function reconnect() {
     reconnectAttempt = 0;
   });
   Socket.addEventListener("close", () => {
+    authenticated = false;
     options?.onClose?.();
     if (options?.reconnectDelayMs && options.reconnectDelayMs > 0) reconnect();
   });
@@ -103,9 +96,28 @@ async function reconnect() {
     options?.onError?.();
   });
   Socket.addEventListener("message", (msg) => {
-    let _msg = new RTMMessageResponse(msg.data.toString());
-    onMessageResponse(_msg);
+    const _raw = JSON.parse(msg.data.toString());
+    if (_raw.event) {
+      // This is an event.
+      let _smsg = new RTMSubscriptionMessage(_raw);
+      onSubscriptionMessage(_smsg);
+    } else {
+      let _msg = new RTMMessageResponse(msg.data.toString());
+      onMessageResponse(_msg);
+    }
   });
+}
+
+function onSubscriptionMessage(msg: RTMSubscriptionMessage<any>) {
+  console.log("Event: " + msg.event);
+  // Get the subscriber (if any)
+  const subs = Subscriptions.get(msg.event);
+  if (subs) {
+    // Iterate all
+    for (let s of subs.values()) {
+      s(...msg.data);
+    }
+  }
 }
 
 /**
@@ -214,4 +226,24 @@ async function waitForReadyState() {
     }
     setTimeout(_wait, 100);
   });
+}
+
+/**
+ * Registers a function to execute when a specific event is received from server. The returned function can be used to unsubscribe.
+ * @param event
+ * @param callback
+ */
+function Subscribe(
+  event: string,
+  callback: (...data: any[]) => void | Promise<void>
+) {
+  // Generate an ID of the subscriber
+  const id = RTMUtils.uuidv4();
+  if (!Subscriptions.has(event)) {
+    // Create a new map
+    Subscriptions.set(event, new Map());
+  }
+  Subscriptions.get(event)!.set(id, callback);
+  // return an unsubscribe hook
+  return () => Subscriptions.get(event)?.delete(id);
 }
