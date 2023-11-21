@@ -132,7 +132,7 @@ function onMessageResponse(msg: RTMMessageResponse<any>) {
     authenticated = Boolean(msg.data);
   }
   // If the message is error, we call on reject with its data.
-  if (msg.data.error) {
+  if (msg.data?.error) {
     msgInfo?.reject?.(msg.data.error);
   } else {
     msgInfo?.response?.(msg.data);
