@@ -13,4 +13,6 @@ export interface RTMClientOptions {
    * If enabled, messages sent via the call functions are queued until the connection has Ready state.
    */
   enableMessageQueue?: boolean;
+
+  onMessage?: (raw: string) => void;
 }

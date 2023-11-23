@@ -50,6 +50,9 @@ export function createClient(
   });
   Socket.addEventListener("message", (msg) => {
     const _raw = JSON.parse(msg.data.toString());
+    if (options.onMessage) {
+      options.onMessage(msg.data.toString());
+    }
     if (_raw.event) {
       // This is an event.
       let _smsg = new RTMSubscriptionMessage(_raw);
