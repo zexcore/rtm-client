@@ -77,6 +77,7 @@ export function createClient(
       return authenticated;
     },
     subscribe: Subscribe,
+    subscribePush: SubscribePush,
   };
 }
 
@@ -160,6 +161,41 @@ async function authenticate<T>(...params: any[]) {
     InvokeQueue.set(msg.id, msg);
     // Send the message
     Socket.send(JSON.stringify(msg));
+  });
+}
+
+/**
+ * Subscribe to the push messages.
+ */
+async function SubscribePush(
+  eventName: string,
+  tags: string[],
+  callback: (...data: any[]) => void
+) {
+  return new Promise(async (resolve, reject) => {
+    await waitForReadyState();
+    // Construct a new message
+    let msg: RTMMessage<any> = {
+      id: RTMUtils.uuidv4(),
+      type: "subscribe",
+      event: eventName,
+      tags: tags,
+      response(data) {
+        resolve(() => Subscriptions.get(eventName)?.delete(id));
+      },
+      reject: reject,
+    };
+    // add the message to the message queue
+    InvokeQueue.set(msg.id, msg);
+    // Send the message
+    Socket.send(JSON.stringify(msg));
+    // Generate an ID of the subscriber
+    const id = RTMUtils.uuidv4();
+    if (!Subscriptions.has(eventName)) {
+      // Create a new map
+      Subscriptions.set(eventName, new Map());
+    }
+    Subscriptions.get(eventName)!.set(id, callback);
   });
 }
 

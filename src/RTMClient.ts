@@ -10,4 +10,9 @@ export interface RTMClient {
     event: string,
     callback: (...data: any[]) => Promise<void> | void
   ) => () => void;
+  subscribePush: (
+    event: string,
+    tags: string[],
+    callback: (...data: any[]) => Promise<void> | void
+  ) => void;
 }
