@@ -113,7 +113,6 @@ async function reconnect() {
 }
 
 function onSubscriptionMessage(msg: RTMSubscriptionMessage<any>) {
-  console.log("Event: " + msg.event);
   // Get the subscriber (if any)
   const subs = Subscriptions.get(msg.event);
   if (subs) {
