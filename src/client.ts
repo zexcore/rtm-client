@@ -10,6 +10,7 @@ let Socket: WebSocket;
 let InvokeQueue: Map<string, RTMMessage<any>> = new Map();
 let MessageQueue: RTMMessage<any>[] = [];
 let authenticated = false;
+let authData: any;
 let address: string;
 let options: RTMClientOptions;
 // Main key is eventName, secondary key is a unique ID of each subscriber used to unsubscribe.
@@ -29,24 +30,16 @@ export function createClient(
   rtmAddress: string,
   rtmOptions?: RTMClientOptions
 ): RTMClient {
+  if (rtmOptions) options = rtmOptions;
   Socket = new WebSocket(rtmAddress);
-  Socket.addEventListener("open", () => {
-    options?.onOpen?.();
-    // Process any queued msgs
-    if (MessageQueue.length > 0) {
-      for (let m of MessageQueue) {
-        Socket.send(JSON.stringify(m));
-      }
-    }
-    MessageQueue = [];
-  });
+  Socket.addEventListener("open", onSocketConnected);
   Socket.addEventListener("close", () => {
     authenticated = false;
     options?.onClose?.();
     if (options?.reconnectDelayMs && options.reconnectDelayMs > 0) reconnect();
   });
   Socket.addEventListener("error", (ev) => {
-    options?.onError?.();
+    options?.onError?.({ code: "rtm/network-error", data: ev });
   });
   Socket.addEventListener("message", (msg) => {
     const _raw = JSON.parse(msg.data.toString());
@@ -62,14 +55,15 @@ export function createClient(
       onMessageResponse(_msg);
     }
   });
-  if (rtmOptions) options = rtmOptions;
   address = rtmAddress;
   return {
     getSocket() {
       return Socket;
     },
     closeClient: closeClient,
-    authenticate: authenticate,
+    auth() {
+      return authData;
+    },
     options: rtmOptions,
     call: Call,
     callWait: CallWait,
@@ -85,19 +79,16 @@ async function reconnect() {
   // wait for the delay
   await new Promise((resolve) => setTimeout(resolve, options.reconnectDelayMs));
   reconnectAttempt += 1;
-  options.onReconnect?.(reconnectAttempt);
+  options.onReconnecting?.(reconnectAttempt);
   Socket = new WebSocket(address);
-  Socket.addEventListener("open", () => {
-    options?.onOpen?.();
-    reconnectAttempt = 0;
-  });
+  Socket.addEventListener("open", onSocketConnected);
   Socket.addEventListener("close", () => {
     authenticated = false;
     options?.onClose?.();
     if (options?.reconnectDelayMs && options.reconnectDelayMs > 0) reconnect();
   });
   Socket.addEventListener("error", (ev) => {
-    options?.onError?.();
+    options?.onError?.({ code: "rtm/network-error", data: ev });
   });
   Socket.addEventListener("message", (msg) => {
     const _raw = JSON.parse(msg.data.toString());
@@ -110,6 +101,40 @@ async function reconnect() {
       onMessageResponse(_msg);
     }
   });
+}
+
+/**
+ * Called when the underlying connection is open. Performs authentication and proceses the queue.
+ * @returns
+ */
+async function onSocketConnected() {
+  // Attempt to authenticate.
+  if (options.authenticationData) {
+    // Authenticate.
+    const data = await authenticate(options.authenticationData);
+    if (data) {
+      authData = data;
+      authenticated = true;
+    } else {
+      options.onError?.({
+        code: "rtm/auth-error",
+        data: "Server returned an invalid response.",
+      });
+      authenticated = false;
+      authData = null;
+      closeClient();
+      return;
+    }
+  }
+  options?.onOpen?.();
+  // Process any queued msgs
+  if (MessageQueue.length > 0) {
+    for (let m of MessageQueue) {
+      Socket.send(JSON.stringify(m));
+    }
+  }
+  MessageQueue = [];
+  reconnectAttempt = 0;
 }
 
 function onSubscriptionMessage(msg: RTMSubscriptionMessage<any>) {
@@ -130,10 +155,6 @@ function onSubscriptionMessage(msg: RTMSubscriptionMessage<any>) {
 function onMessageResponse(msg: RTMMessageResponse<any>) {
   // Get the message promise from queue
   const msgInfo = InvokeQueue.get(msg.id);
-  if (msgInfo?.type === "auth") {
-    // If the data is truthy, we set authenticated to true.
-    authenticated = Boolean(msg.data);
-  }
   // If the message is error, we call on reject with its data.
   if (msg.data?.error) {
     msgInfo?.reject?.(msg.data.error);
@@ -213,8 +234,13 @@ async function Call<T>(func: string, ...data: any[]) {
   };
   // add the message to the message queue
   InvokeQueue.set(msg.id, msg);
-  // Send the message
-  await Socket.send(JSON.stringify(msg));
+  // If we are not in ready State, and if message queue is enabled, we add this msg to the que
+  if (Socket.readyState !== Socket.OPEN) {
+    MessageQueue.push(msg);
+  } else {
+    // Send the message
+    Socket.send(JSON.stringify(msg));
+  }
 }
 
 /**
@@ -237,7 +263,7 @@ async function CallWait<T>(func: string, ...data: any[]) {
       // add the message to the message queue
       InvokeQueue.set(msg.id, msg);
       // If we are not in ready State, and if message queue is enabled, we add this msg to the que
-      if (Socket.readyState !== Socket.OPEN && options.enableMessageQueue) {
+      if (Socket.readyState !== Socket.OPEN) {
         MessageQueue.push(msg);
       } else {
         // Send the message
