@@ -168,7 +168,6 @@ function onMessageResponse(msg: RTMMessageResponse<any>) {
  */
 async function authenticate<T>(...params: any[]) {
   return new Promise<T>(async (resolve, reject) => {
-    await waitForReadyState();
     // Construct a new message
     let msg: RTMMessage<T> = {
       id: RTMUtils.uuidv4(),
@@ -224,7 +223,6 @@ async function SubscribePush(
  * the results back.
  */
 async function Call<T>(func: string, ...data: any[]) {
-  await waitForReadyState();
   // Construct a new message
   let msg: RTMMessage<T> = {
     id: RTMUtils.uuidv4(),
