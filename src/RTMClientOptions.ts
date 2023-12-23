@@ -4,6 +4,8 @@ export interface RTMClientOptions {
    */
   authenticationData?: any;
 
+  onAuthenticating?: () => void;
+
   /**
    * Called every time the connection is opened. Only called after a successful authentication.
    * @returns

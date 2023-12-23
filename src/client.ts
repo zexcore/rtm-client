@@ -43,9 +43,7 @@ export function createClient(
   });
   Socket.addEventListener("message", (msg) => {
     const _raw = JSON.parse(msg.data.toString());
-    if (options.onMessage) {
-      options.onMessage(msg.data.toString());
-    }
+    options.onMessage?.(msg.data.toString());
     if (_raw.event) {
       // This is an event.
       let _smsg = new RTMSubscriptionMessage(_raw);
@@ -92,6 +90,7 @@ async function reconnect() {
   });
   Socket.addEventListener("message", (msg) => {
     const _raw = JSON.parse(msg.data.toString());
+    options.onMessage?.(msg.data.toString());
     if (_raw.event) {
       // This is an event.
       let _smsg = new RTMSubscriptionMessage(_raw);
@@ -110,6 +109,7 @@ async function reconnect() {
 async function onSocketConnected() {
   // Attempt to authenticate.
   if (options.authenticationData) {
+    options.onAuthenticating?.();
     // Authenticate.
     const data = await authenticate(options.authenticationData);
     if (data) {
