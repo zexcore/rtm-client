@@ -1,4 +1,4 @@
-import { createClient } from "./client";
 import { RTMMessageResponse } from "./RTMMessageResponse";
-import { RTMClient } from "./RTMClient";
-export { RTMClient, createClient, RTMMessageResponse };
+import { RtmClient } from "./RTMClient";
+
+export { RtmClient, RTMMessageResponse };
